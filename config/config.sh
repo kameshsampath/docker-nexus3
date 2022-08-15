@@ -1,19 +1,20 @@
 #! /usr/bin/env bash
 
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-
-cp "${SCRIPT_DIR}/nexus.properties" /nexus-data/etc/nexus.properties
-
 set -uo pipefail
 
+unset KUBECONFIG
+
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+NEXUS_NS=${NEXUS_NS:-default}
+NEXUS_DEPLOYMENT=${NEXUS_DEPLOYMENT:-nexus3}
 NEXUS_SCRIPTS=("anonymous-access" "update-admin-password" "my-docker-registry")
-SCRIPT_FILE=${SCRIPT_FILE:-"${SCRIPT_DIR}/script.json"}
 NEXUS_URL=${NEXUS_URL:-'http://localhost:8081'}
-NEXUS_NS=${NEXUS_NS:-infra}
 NEXUS_ADMIN_PASSWD=${NEXUS_ADMIN_PASSWD:-admin123}
 ANONYMOUS_ACCESS=${ANONYMOUS_ACCESS:-false}
 
-function wait_for_nexus() {
+function is_api_ready(){
+  printf "\n Waiting for Nexus API to be Ready\n"
+
   res_code=$(curl --silent --fail --output /dev/null -w '%{http_code}' "${NEXUS_URL}")
 
   until [ "$res_code" -ne 000 ] &&  [ "$res_code" -lt 400 ];
@@ -21,17 +22,23 @@ function wait_for_nexus() {
     sleep 5
     res_code=$(curl --silent --fail --output /dev/null -w '%{http_code}' "${NEXUS_URL}")
   done
+  
+  printf "\n Nexus API Ready\n"
+}
 
-  printf "\n Nexus Ready\n"
+function wait_for_nexus() {
+  kubectl rollout status -n "$NEXUS_NS" deploy/"$NEXUS_DEPLOYMENT" --timeout=120s
 }
 
 function check_if_script_exists(){
   local http_code
   http_code="$(curl -s -o /dev/null -I -w '%{http_code}' -X GET -u admin:$1 $NEXUS_URL/service/rest/v1/script/$2)"
-  echo "$http_code"
+  printf  "Script %s check returned %d" "$2" "$http_code"
 }
 
 function loadScripts(){
+  echo "Loading scripts"
+  
   local admin_pwd
   if [ -f  /nexus-data/admin.password ];
   then
@@ -46,8 +53,7 @@ function loadScripts(){
     script_json_file=""${SCRIPT_DIR}/$s.json""
     local http_code
     http_code="$(check_if_script_exists $admin_pwd $s)"
-    echo "$http_code"
-
+    
     if [ "200" != "${http_code}" ];
     then 
       echo "Creating $s script"
@@ -55,12 +61,16 @@ function loadScripts(){
         -u "admin:$admin_pwd" \
         -d@"$script_json_file" \
         "$NEXUS_URL/service/rest/v1/script"
-    else
+    elif [ "${http_code}" -ne 404 ] && [ "${http_code}" -ne 410 ];
+    then
       echo "Updating $s script"
       curl -v -X PUT --header "Content-Type: application/json" \
         -u "admin:$admin_pwd" \
         -d@"$script_json_file" \
         "$NEXUS_URL/service/rest/v1/script/$s"
+    else
+      printf "Error loading script %s error status %d" "$s" "$http_code"
+      exit 1
     fi
   done
 }
@@ -124,13 +134,28 @@ function create_docker_registry() {
   fi
 }
 
+wait_for_nexus
+
+# ensuring that the replicas are scaled down
+kubectl scale --replicas=0  -n "$NEXUS_NS" deployment "$NEXUS_DEPLOYMENT"
+
+if ! grep -qR 'nexus.scripts.allowCreation=true' /nexus-data/etc/nexus.properties
+then
+  if [ -w /nexus-data/etc/nexus.properties ];
+  then
+    echo "Scripting not enabled, enabling now."
+    echo -n 'nexus.scripts.allowCreation=true' >> /nexus-data/etc/nexus.properties
+  else
+    echo "Cant write to file /nexus-data/etc/nexus.properties" 
+    exit 1
+  fi
+fi
+
+kubectl scale --replicas=1  -n "$NEXUS_NS" deployment "$NEXUS_DEPLOYMENT"
 
 wait_for_nexus
+is_api_ready
 loadScripts
-
-# enable exit on error
-set -e 
-
 update_admin_password
 set_anonymous_access
 create_docker_registry

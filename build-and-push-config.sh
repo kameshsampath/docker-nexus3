@@ -6,9 +6,9 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 IMAGE_REPO=docker.io/kameshsampath
 BUILDER=buildx-multi-arch
-NEXUS_CONFIG_DOCKER_FILE=$SCRIPT_DIR/Dockerfile
+NEXUS_CONFIG_DOCKER_FILE=$SCRIPT_DIR/Dockerfile.sidecar
 NEXUS_VERSION=3.41.0-01
-NEXUS_CONFIG_VERSION=${NEXUS_VERSION}-config
+NEXUS_CONFIG_VERSION=${NEXUS_VERSION}
 
 docker buildx inspect "$BUILDER" || docker buildx create --name="$BUILDER" --driver=docker-container --driver-opt=network=host
 
