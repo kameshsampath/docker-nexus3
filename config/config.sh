@@ -6,7 +6,7 @@ cp "${SCRIPT_DIR}/nexus.properties" /nexus-data/etc/nexus.properties
 
 set -uo pipefail
 
-NEXUS_SCRIPTS=("anonymous-access" "update-admin-password")
+NEXUS_SCRIPTS=("anonymous-access" "update-admin-password" "my-docker-registry")
 SCRIPT_FILE=${SCRIPT_FILE:-"${SCRIPT_DIR}/script.json"}
 NEXUS_URL=${NEXUS_URL:-'http://localhost:8081'}
 NEXUS_NS=${NEXUS_NS:-infra}
@@ -60,7 +60,7 @@ function loadScripts(){
       curl -v -X PUT --header "Content-Type: application/json" \
         -u "admin:$admin_pwd" \
         -d@"$script_json_file" \
-        "$NEXUS_URL/service/rest/v1/script"
+        "$NEXUS_URL/service/rest/v1/script/$s"
     fi
   done
 }
@@ -107,6 +107,24 @@ function set_anonymous_access() {
   fi
 }
 
+function create_docker_registry() {
+  local admin_pwd
+  if [ -f  /nexus-data/admin.password ];
+  then
+    admin_pwd=$(cat /nexus-data/admin.password)
+  else
+    admin_pwd="${NEXUS_ADMIN_PASSWD}"
+  fi
+
+  if [ "200" == "$(run_script "$admin_pwd" 'my-docker-registry' "@${SCRIPT_DIR}/my-docker-registry-params.json")" ];
+    then
+      printf "\n Added default private docker registry \n"
+    else
+      printf "\n Adding private docker registry failed \n"
+  fi
+}
+
+
 wait_for_nexus
 loadScripts
 
@@ -115,5 +133,6 @@ set -e
 
 update_admin_password
 set_anonymous_access
+create_docker_registry
 
 exit 0
