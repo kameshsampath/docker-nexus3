@@ -1,0 +1,9 @@
+FROM docker.io/kameshsampath/kube-dev-tools:latest
+
+WORKDIR /apps
+
+RUN mkdir -p "config"
+
+COPY config/* "config/"
+
+CMD [ "/apps/config/run.sh" ]

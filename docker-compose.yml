@@ -2,11 +2,28 @@ version: "2"
 
 services:
   nexus:
-    image: sonatype/nexus3
+    build:
+      dockerfile: docker.io/kameshsampath/nexu:3.41.0-01
     volumes:
       - "nexus-data:/nexus-data"
     ports:
       - "8081:8081"
-  
+    networks:
+      - nexus
+  nexus-config:
+    depends_on:
+     - nexus
+    build:
+      dockerfile: docker.io/kameshsampath/nexus3-config:0.0.1
+    environment:
+      - "NEXUS_URL=http://nexus:8081"
+      - "NEXUS_ADMIN_NEW_PASSWD=admin123"
+      - "ANONYMOUS_ACCESS=true"
+    volumes:
+      - "nexus-data:/nexus-data"
+    networks:
+      - nexus
 volumes:
-  nexus-data: {}
+  nexus-data:
+networks:
+  nexus:
